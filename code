@@ -1,0 +1,318 @@
+import random
+import matplotlib.pyplot as plt
+import sys
+from scipy.stats import poisson
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QMessageBox
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtCore import Qt
+
+
+class Agent:
+    def __init__(self, id, os, daysFromLastAntivirusUpdate, state, networkConnectivity, user_experience):
+        self.id = id
+        self.os = os
+        self.daysFromLastAntivirusUpdate = daysFromLastAntivirusUpdate
+        self.antivirus_protection_score = self.calculate_antivirus_protection_score()
+        self.state = state
+        self.stateAge = 0
+        self.networkConnectivity = networkConnectivity
+        self.user_experience = user_experience
+       
+    def calculate_antivirus_protection_score(self):
+        return 1 - (operatingSystems[self.os] * (self.daysFromLastAntivirusUpdate / 45))
+   
+    def updateAntivirus(self):
+        self.daysFromLastAntivirusUpdate = 0
+        self.antivirus_protection_score = self.calculate_antivirus_protection_score()
+   
+    def incrementDaysFromLastAntivirusUpdate(self):
+        self.daysFromLastAntivirusUpdate += 1
+        self.antivirus_protection_score = self.calculate_antivirus_protection_score()
+   
+    def incrementStateAge(self):
+        self.stateAge += 1
+   
+    def updateState(self, newState):
+        self.state = newState
+        self.stateAge = 0
+
+    def scanComputer(self):
+      antivirus_protection_score = self.calculate_antivirus_protection_score()
+      if antivirus_protection_score > 0.5: 
+          # Consider user experience to adjust the probability of transitioning to Recovered state
+          recovery_probability = operatingSystems[self.os]  # Base probability of recovery
+          if float(self.user_experience) > 0.5:
+              # Higher user experience increases the probability of recovery
+              recovery_probability += 0.1  # Example adjustment based on user experience
+          if random.random() < recovery_probability:
+              self.updateState("R")
+
+ 
+operatingSystems = {
+    "Windows": 0.8,
+    "Mac": 0.3,
+    "Linux": 0.5
+}
+ 
+ 
+def simulateDay(agents, daysPassed, update_interval, antivirusScanPeriod):
+    for agent in agents:
+        if float(agent.user_experience) > 0.5 and agent.daysFromLastAntivirusUpdate >= update_interval:
+            agent.updateAntivirus()
+        else:
+            agent.incrementDaysFromLastAntivirusUpdate()
+       
+        agent.incrementStateAge()
+             
+        lambda_val = 0.125 #meaning every 8 days, 1 computer is attacked
+        prob_at_least_one_attack = 1 - poisson.pmf(0, lambda_val) #inverse of prob of zero attacks
+ 
+        if agent.state == "S":
+        #random chance of this agent being attacked
+            if random.random() < prob_at_least_one_attack:
+                agent.updateState("E")
+ 
+        if agent.state == "E":
+            if agent.calculate_antivirus_protection_score() < 0.7:
+                agent.updateState("I")
+ 
+   
+        elif agent.state == "I":
+            if daysPassed % antivirusScanPeriod == 0:
+                agent.scanComputer()
+ 
+ 
+        elif agent.state == "R":
+            # Adjust the probability of transitioning to Susceptible state based on operating system score
+            new_virus_probability = 0.2 * operatingSystems[agent.os]  # Adjusted probability based on operating system score
+            if random.random() < new_virus_probability:
+                agent.updateState("S")
+ 
+def countStates(agents):
+    stateCount = {"S": 0, "E": 0, "I": 0, "R": 0}
+    for agent in agents:
+        stateCount[agent.state] += 1
+    return stateCount
+ 
+ 
+def generate_agents(num_agents, os_percentages, state_percentages, connectivity_percentages, experience_percentages):
+    agents = []
+    os_counts = {os: int(num_agents * percentage) for os, percentage in os_percentages.items()}
+    state_counts = {state: int(num_agents * percentage) for state, percentage in state_percentages.items()}
+    connectivity_counts = {connectivity: int(num_agents * percentage) for connectivity, percentage in connectivity_percentages.items()}
+    experience_counts = {experience: int(num_agents * percentage) for experience, percentage in experience_percentages.items()}
+ 
+    agent_id = 1
+    for os, count in os_counts.items():
+        for _ in range(count):
+            state = random.choice(list(state_counts.keys()))
+            connectivity = random.choice(list(connectivity_counts.keys()))
+            experience = random.choice(list(experience_counts.keys()))
+            agent = Agent(agent_id, os, 0, state, connectivity, experience)
+            agents.append(agent)
+            agent_id += 1
+ 
+            state_counts[state] -= 1
+            connectivity_counts[connectivity] -= 1
+            experience_counts[experience] -= 1
+ 
+            if state_counts[state] == 0:
+                del state_counts[state]
+            if connectivity_counts[connectivity] == 0:
+                del connectivity_counts[connectivity]
+            if experience_counts[experience] == 0:
+                del experience_counts[experience]
+ 
+    return agents
+ 
+class SimulationApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('Virus Simulation')
+        self.setGeometry(100, 100, 2000, 600)
+
+        main_layout = QVBoxLayout()
+
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget(scroll_area)
+        layout = QVBoxLayout(scroll_content)
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area)
+
+        input_layout = QHBoxLayout()
+        input_layout.addWidget(QLabel('Simulation Days:'))
+        self.days_input = QLineEdit('91')
+        input_layout.addWidget(self.days_input)
+        input_layout.addWidget(QLabel('Number of Agents:'))
+        self.num_agents_input = QLineEdit('100')
+        input_layout.addWidget(self.num_agents_input)
+        layout.addLayout(input_layout)
+
+        os_layout = QHBoxLayout()
+        os_layout.addWidget(QLabel('OS Percentages (Windows, Mac, Linux):'))
+        self.os_windows_input = QLineEdit('0.5')
+        os_layout.addWidget(self.os_windows_input)
+        self.os_mac_input = QLineEdit('0.3')
+        os_layout.addWidget(self.os_mac_input)
+        self.os_linux_input = QLineEdit('0.2')
+        os_layout.addWidget(self.os_linux_input)
+        layout.addLayout(os_layout)
+
+        connectivity_layout = QHBoxLayout()
+        connectivity_layout.addWidget(QLabel('Connectivity Percentages (0.2, 0.4, 0.6, 0.8):'))
+        self.connectivity_02_input = QLineEdit('0.2')
+        connectivity_layout.addWidget(self.connectivity_02_input)
+        self.connectivity_04_input = QLineEdit('0.3')
+        connectivity_layout.addWidget(self.connectivity_04_input)
+        self.connectivity_06_input = QLineEdit('0.3')
+        connectivity_layout.addWidget(self.connectivity_06_input)
+        self.connectivity_08_input = QLineEdit('0.2')
+        connectivity_layout.addWidget(self.connectivity_08_input)
+        layout.addLayout(connectivity_layout)
+
+        experience_layout = QHBoxLayout()
+        experience_layout.addWidget(QLabel('Experience Percentages (0.2, 0.4, 0.6, 0.8):'))
+        self.experience_02_input = QLineEdit('0.1')
+        experience_layout.addWidget(self.experience_02_input)
+        self.experience_04_input = QLineEdit('0.3')
+        experience_layout.addWidget(self.experience_04_input)
+        self.experience_06_input = QLineEdit('0.4')
+        experience_layout.addWidget(self.experience_06_input)
+        self.experience_08_input = QLineEdit('0.2')
+        experience_layout.addWidget(self.experience_08_input)
+        layout.addLayout(experience_layout)
+
+        update_layout = QHBoxLayout()
+        update_layout.addWidget(QLabel('Antivirus update Interval:'))
+        self.update_interval_input = QLineEdit('45')
+        update_layout.addWidget(self.update_interval_input)
+        update_layout.addWidget(QLabel('Antivirus Scan Period:'))
+        self.antivirus_scan_period_input = QLineEdit('7')
+        update_layout.addWidget(self.antivirus_scan_period_input)
+        layout.addLayout(update_layout)
+
+        self.simulate_button = QPushButton('Simulate Virus')
+        self.simulate_button.clicked.connect(self.check_percentages_and_simulate)
+        layout.addWidget(self.simulate_button)
+
+        self.plot_grid = QGridLayout()
+        layout.addLayout(self.plot_grid)
+
+        self.setLayout(main_layout)
+
+    def check_percentages_and_simulate(self):
+        os_percentages = [
+            float(self.os_windows_input.text()),
+            float(self.os_mac_input.text()),
+            float(self.os_linux_input.text())
+        ]
+
+        connectivity_percentages = [
+            float(self.connectivity_02_input.text()),
+            float(self.connectivity_04_input.text()),
+            float(self.connectivity_06_input.text()),
+            float(self.connectivity_08_input.text())
+        ]
+
+        experience_percentages = [
+            float(self.experience_02_input.text()),
+            float(self.experience_04_input.text()),
+            float(self.experience_06_input.text()),
+            float(self.experience_08_input.text())
+        ]
+
+        if (
+            abs(sum(os_percentages) - 1.0) > 1e-6 or
+            abs(sum(connectivity_percentages) - 1.0) > 1e-6 or
+            abs(sum(experience_percentages) - 1.0) > 1e-6
+        ):
+            QMessageBox.critical(self, 'Error', 'Percentages in each category must sum up to 1.')
+        else:
+            self.simulate()
+
+    def simulate(self):
+        update_interval = int(self.update_interval_input.text())
+        antivirus_scan_period = int(self.antivirus_scan_period_input.text())
+        num_agents = int(self.num_agents_input.text())
+        os_percentages = {
+            'Windows': float(self.os_windows_input.text()),
+            'Mac': float(self.os_mac_input.text()),
+            'Linux': float(self.os_linux_input.text())
+        }
+        state_percentages = {
+            'S': float(1.0)
+        }
+        connectivity_percentages = {
+            0.2: float(self.connectivity_02_input.text()),
+            0.4: float(self.connectivity_04_input.text()),
+            0.6: float(self.connectivity_06_input.text()),
+            0.8: float(self.connectivity_08_input.text())
+        }
+        experience_percentages = {
+            0.2: float(self.experience_02_input.text()),
+            0.4: float(self.experience_04_input.text()),
+            0.6: float(self.experience_06_input.text()),
+            0.8: float(self.experience_08_input.text())
+        }
+        days = int(self.days_input.text())
+
+        agents = generate_agents(num_agents, os_percentages, state_percentages, connectivity_percentages, experience_percentages)
+
+        susceptible = []
+        exposed = []
+        infected = []
+        recovered = []
+
+        for day in range(days):
+            state_count = countStates(agents)
+            susceptible.append(state_count["S"])
+            exposed.append(state_count["E"])
+            infected.append(state_count["I"])
+            recovered.append(state_count["R"])
+
+            simulateDay(agents, day, update_interval, antivirus_scan_period)
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(range(days), susceptible, label="Susceptible")
+        ax.plot(range(days), exposed, label="Exposed")
+        ax.plot(range(days), infected, label="Infected", color='red')
+        ax.plot(range(days), recovered, label="Recovered", color='green')
+        ax.set_xlabel("Days")
+        ax.set_ylabel("Number of Agents")
+        ax.set_title("SEIR Model Dynamics")
+        ax.legend()
+        ax.grid()
+
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+
+        img = canvas.tostring_rgb()
+        width, height = fig.canvas.get_width_height()
+        qimg = QPixmap.fromImage(QImage(img, width, height, QImage.Format_RGB888))
+
+        plot_label = QLabel()
+        plot_label.setPixmap(qimg)
+        plot_label.setAlignment(Qt.AlignCenter)
+
+        row = self.plot_grid.rowCount() - 1
+        col = self.plot_grid.columnCount()
+        if col == 2:
+            row += 1
+            col = 0
+        else:
+            col += 1
+        self.plot_grid.addWidget(plot_label, row, col)
+
+        if self.simulate_button.text() == 'Simulate Virus':
+            self.simulate_button.setText('Add Simulation')
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    simulation_app = SimulationApp()
+    simulation_app.show()
+    sys.exit(app.exec_())
